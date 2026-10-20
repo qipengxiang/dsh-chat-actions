@@ -13,7 +13,8 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const ENDPOINT = '/dsh-chat-actions/prefs'
+    const ROUTE = '/dsh-chat-actions'
+    const ENDPOINT = `${ROUTE}/prefs`
 
     /** Key, switch label, one-line description. */
     const ACTIONS = [
@@ -141,20 +142,44 @@ window.__ModuleLoader__.load({
       return payload
     }
 
+    // Boot read diagnostics land in the profile's dsh-chat-actions.log: a page that loses the state
+    // at launch cannot be inspected from inside the desktop shell, and guessing is worse.
+    function diag(entry) {
+      void fetch(`${ROUTE}/diag`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(entry),
+      }).catch(() => {})
+    }
+
+    // The desktop shell forwards plugin requests to a host that may still be booting, so the first
+    // read can fail through no fault of the page; one lost read must not hide nothing all session.
+    async function readSaved() {
+      for (let tries = 0; ; tries += 1) {
+        try {
+          return await call('GET')
+        } catch (cause) {
+          diag({ phase: 'load', tries, error: String(cause?.message ?? cause) })
+          if (tries === 3) throw cause
+          await new Promise((done) => setTimeout(done, 400 * (tries + 1)))
+        }
+      }
+    }
+
     function load() {
       // Fetched once per page: the answer is cached, and a later visit must not replay an older
       // snapshot over a save the user already made (`save` is what keeps `current` truthful).
       if (loaded) return Promise.resolve(current)
-      loading ??= call('GET')
+      loading ??= readSaved()
         .then((saved) => {
           current = saved
           loaded = true
           paint()
           notify()
+          diag({ phase: 'ok', hidden: ORDER.filter((key) => !visible(key)).join(','), rules: styleNode().textContent.length })
         })
-        .catch((cause) => {
+        .finally(() => {
           loading = undefined
-          throw cause
         })
       return loading
     }

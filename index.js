@@ -14,6 +14,8 @@ export const name = 'dsh-chat-actions'
 // No trailing slash: the carrier matches `path === prefix || path.startsWith(prefix + '/')`.
 const ROUTE_PREFIX = '/dsh-chat-actions'
 const STATE_PATH = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-chat-actions.json')
+// Written by the browser half when it reads its state at boot: the only view into a launch that lost it.
+const LOG_PATH = join(dirname(STATE_PATH), 'dsh-chat-actions.log')
 
 /** One key per button the browser half can hide; `true` means visible. `overflow` is not a button:
  * it collects the hidden ones behind a 「⋯」 cell instead of hiding them outright. */
@@ -63,6 +65,28 @@ async function writeState(state, path = STATE_PATH) {
   await rename(temp, path)
 }
 
+/** Append one boot record; a reader tailing the file wants the last launches, not every page. */
+async function appendDiag(entry) {
+  const line = JSON.stringify({
+    at: new Date().toISOString(),
+    ...Object.fromEntries(
+      Object.entries(entry ?? {}).flatMap(([key, value]) =>
+        typeof value === 'number' || typeof value === 'boolean'
+          ? [[key, value]]
+          : typeof value === 'string'
+            ? [[key, value.slice(0, 300)]]
+            : [],
+      ),
+    ),
+  })
+  try {
+    const history = await readFile(LOG_PATH, 'utf8').catch(() => '')
+    const kept = history.split('\n').filter(Boolean).slice(-199)
+    await mkdir(dirname(LOG_PATH), { recursive: true })
+    await writeFile(LOG_PATH, `${[...kept, line].join('\n')}\n`)
+  } catch {}
+}
+
 export function apply(ctx) {
   function route(req, res) {
     void (async () => {
@@ -76,6 +100,10 @@ export function apply(ctx) {
           const next = sanitize(await readJSON(req), await readState())
           await writeState(next)
           return sendJSON(res, 200, next)
+        }
+        if (action === 'diag' && req.method === 'POST') {
+          await appendDiag(await readJSON(req))
+          return sendJSON(res, 200, { ok: true })
         }
         return sendJSON(res, 404, { error: `unknown action ${action}` })
       } catch (error) {

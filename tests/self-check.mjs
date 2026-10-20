@@ -33,9 +33,14 @@ globalThis.document = documentStub
 await import('../client.js')
 
 /** Boot the browser half against one saved-preferences payload and return the CSS it painted. */
+const diagBodies = []
 async function paint(saved) {
   let requests = 0
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/diag')) {
+      diagBodies.push(JSON.parse(init.body))
+      return { ok: true, json: async () => ({ ok: true }) }
+    }
     requests += 1
     return { ok: true, json: async () => saved }
   }
@@ -91,5 +96,28 @@ assert.doesNotMatch(collected, /\[role="tooltip"\]/)
 const idle = await paint({ ...DEFAULTS, overflow: true })
 assert.doesNotMatch(idle, /data-dca-open/)
 assert.doesNotMatch(idle, /\.dca-card\{display:block/)
+
+// A boot read is retried, and both outcomes are recorded where a lost launch can be read back.
+assert.deepEqual(
+  diagBodies.filter((body) => body.phase === 'ok').map((body) => body.hidden).slice(-3),
+  ['copy,dislike,usage', 'copy,dislike,usage', ''],
+)
+
+// A read that fails at launch is retried instead of leaving a whole session unthemed.
+let calls = 0
+globalThis.fetch = async (url) => {
+  if (String(url).endsWith('/diag')) return { ok: true, json: async () => ({ ok: true }) }
+  calls += 1
+  if (calls < 3) throw new Error('Failed to fetch')
+  return { ok: true, json: async () => ({ ...DEFAULTS, copy: false }) }
+}
+const retried = definition.factory((id) => {
+  if (id === 'react') return React
+  throw new Error(`unexpected require(${id})`)
+})
+retried.apply({ slots: { inject: (name, setup) => setup(), register: (options) => options } })
+await new Promise((resolve) => setTimeout(resolve, 1600))
+assert.equal(calls, 3)
+assert.match(appended[0].textContent, /first-of-type\{display:none !important\}/)
 
 console.log('self-check ok')
