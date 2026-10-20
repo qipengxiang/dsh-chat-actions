@@ -89,12 +89,25 @@ assert.match(
 assert.match(collected, /\[data-clock="end"\]\[data-dca-open\] button\[aria-haspopup="dialog"\]\{display:inline-flex !important; position:fixed;[^}]*left:calc\(var\(--dca-l\) \+ 52px\);/)
 // The usage trigger is icon + live text: the cell only keeps the icon.
 assert.match(collected, /\[data-clock="end"\]\[data-dca-open\] button\[aria-haspopup="dialog"\] > span\{display:none\}/)
-// The shipped label bubble follows the hovered button, so it would sit on the open 「⋯」 cell.
-assert.doesNotMatch(collected, /\[role="tooltip"\]/)
+// Flipped up: the shipped bubble is hidden and every cell draws the same label above the card, so
+// the card can sit next to the 「⋯」 instead of reserving the bubble's room below the icon.
+assert.match(
+  collected,
+  /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] \[role="tooltip"\]\{display:none !important\}/,
+)
+assert.match(
+  collected,
+  /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] > button:first-of-type\[aria-label\]:hover::before\{content:attr\(aria-label\); position:fixed; top:calc\(var\(--dca-t\) - 28px\); left:calc\(var\(--dca-l\) \+ 16px\);/,
+)
+assert.match(
+  collected,
+  /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] button\[aria-haspopup="dialog"\]\[aria-label\]:hover::before\{[^}]*left:calc\(var\(--dca-l\) \+ 64px\);/,
+)
 
 // Collection on but nothing hidden: no popover at all.
 const idle = await paint({ ...DEFAULTS, overflow: true })
 assert.doesNotMatch(idle, /data-dca-open/)
+assert.doesNotMatch(idle, /data-dca-flip/)
 assert.doesNotMatch(idle, /\.dca-card\{display:block/)
 
 // A boot read is retried, and both outcomes are recorded where a lost launch can be read back.

@@ -127,6 +127,15 @@ window.__ModuleLoader__.load({
         })
         // The usage trigger is icon + live text; a popover cell only has room for the icon.
         if (hidden.includes('usage')) rules.push(`${OPEN} ${TARGET.usage} > span{display:none}`)
+        // Flipped up: the shipped bubble hangs under the hovered cell and would force a wide gap
+        // over the 「⋯」, so hide it and draw the same label above the cell instead.
+        rules.push(`${OPEN}[data-dca-flip="up"] [role="tooltip"]{display:none !important}`)
+        hidden.forEach((key, index) => {
+          const center = PAD + index * CELL + CELL / 2
+          rules.push(
+            `${OPEN}[data-dca-flip="up"] ${TARGET[key]}[aria-label]:hover::before{content:attr(aria-label); position:fixed; top:calc(var(--dca-t) - 28px); left:calc(var(--dca-l) + ${center}px); transform:translateX(-50%); padding:2px 8px; border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font-size:12px; line-height:1.5; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,0.14); z-index:52}`,
+          )
+        })
       }
       styleNode().textContent = rules.join('\n')
     }
@@ -229,6 +238,7 @@ window.__ModuleLoader__.load({
         if (!node || !collect) return undefined
         if (!open) {
           node.removeAttribute('data-dca-open')
+          node.removeAttribute('data-dca-flip')
           return undefined
         }
         const cell = ref.current.getBoundingClientRect()
@@ -240,14 +250,17 @@ window.__ModuleLoader__.load({
         while (frame && getComputedStyle(frame).overflowY === 'visible') frame = frame.parentElement
         const bottom = (frame ?? document.documentElement).getBoundingClientRect().bottom
         const below = cell.bottom + 6
-        // Opening above leaves a gap for the shipped label bubble: it hangs 8px under the hovered
-        // button and is about 26px tall, so a tight gap would let it cover the 「⋯」 cell itself.
-        const top = below + CARD_HEIGHT + 8 <= bottom ? below : Math.max(8, cell.top - CARD_HEIGHT - 40)
+        const fitsBelow = below + CARD_HEIGHT + 8 <= bottom
+        // Flipped up the label is drawn above the hovered cell (see paint), so the card can sit close
+        // to the 「⋯」 instead of reserving the bubble's room.
+        const top = fitsBelow ? below : Math.max(8, cell.top - CARD_HEIGHT - 8)
         node.style.setProperty('--dca-t', `${Math.round(top)}px`)
         node.style.setProperty('--dca-l', `${Math.round(left)}px`)
+        node.setAttribute('data-dca-flip', fitsBelow ? 'down' : 'up')
         node.setAttribute('data-dca-open', '')
         return () => {
           node.removeAttribute('data-dca-open')
+          node.removeAttribute('data-dca-flip')
           node.style.removeProperty('--dca-t')
           node.style.removeProperty('--dca-l')
         }

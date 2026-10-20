@@ -24,8 +24,9 @@ The copy button on a code block belongs to the editor, not to this row, and is n
 The first switch on the settings page, on by default:
 
 - **on** — hidden buttons leave the row and reappear in a small popover under a `⋯` button. Hovering
-  a revealed button still shows its shipped label bubble (`好的回答`, `在新对话中分支`, …), and the
-  bubble is kept clear of the `⋯` so it can always be clicked again.
+  a revealed button still shows its label: the shipped bubble when the popover opens downwards, and
+  the same text drawn above the icon when it opens upwards (the last reply sits on the composer, so
+  the popover has to flip) — that way the popover can sit right next to the `⋯`.
 - **off** — hidden buttons are simply gone.
 - The switch is disabled while every button is visible: there is nothing to collect, and no `⋯`
   renders in the chat in that state.
@@ -75,6 +76,6 @@ dropping unknown keys, and the slot registrations.
   `conversation.chat.assistant-actions`. A shipped button inserted before copy, or another plugin's
   entry in front of the feedback pair, would shift what a switch hides. The `shortcut:` comment in
   `client.js` marks this.
-- The `⋯` popover is placed with measured coordinates (24px cells, 32px card); the 40px gap left
-  above the row is sized for the shipped label bubble. A different bubble size would need that
-  constant updated.
+- The `⋯` popover is placed with measured coordinates (24px cells, 32px card). Flipped up, its
+  labels are drawn from each button's `aria-label`; a shipped button without one would show the
+  cell but no text.
