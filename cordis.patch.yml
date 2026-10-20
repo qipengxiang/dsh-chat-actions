@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-chat-actions
+      name: 'dsh-chat-actions'
+      config: {}
