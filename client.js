@@ -68,7 +68,11 @@ window.__ModuleLoader__.load({
 .dca-title { margin: 0; font-size: 18px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .dca-note { font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); margin: 0; }
 .dca-list { display: flex; flex-direction: column; }
-.dca-row { display: flex; align-items: center; gap: 16px; padding: 13px 0; cursor: pointer; }
+.dca-row { position: relative; display: flex; align-items: center; gap: 16px; padding: 13px 0; cursor: pointer; }
+/* Drop line: where the dragged row lands, drawn on the edge the pointer is closer to. */
+.dca-row::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; border-radius: 1px; background: transparent; pointer-events: none; transition: background 80ms ease; }
+.dca-row-over-before::after { top: -1px; background: #2f80ff; }
+.dca-row-over-after::after { bottom: -1px; background: #2f80ff; }
 .dca-row + .dca-row { border-top: 1px solid var(--dsw-alias-border-l1); }
 .dca-row:hover .dca-row-title { color: var(--dsw-alias-brand-primary); }
 .dca-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
@@ -463,6 +467,8 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(undefined)
       const [busy, setBusy] = React.useState(undefined)
       const [dragging, setDragging] = React.useState(undefined)
+      // Where a drop would land: the row under the pointer, and which half of it.
+      const [over, setOver] = React.useState(undefined)
       const [ready, setReady] = React.useState(false)
       const [, bump] = React.useReducer((count) => count + 1, 0)
 
@@ -497,10 +503,13 @@ window.__ModuleLoader__.load({
       // Listed in the order the user dragged them into; the drop target gets the dragged row in front.
       const keys = [...found].sort((left, right) => orderOf(left) - orderOf(right))
       const rows = keys.length > 0 ? [OVERFLOW_ROW, ...keys.map(rowOf)] : []
-      const drop = (target) => {
-        if (!dragging || dragging === target) return
+      const drop = () => {
+        if (!dragging || !over || dragging === over.key) return
         const next = keys.filter((key) => key !== dragging)
-        next.splice(next.indexOf(target), 0, dragging)
+        const index = next.indexOf(over.key)
+        if (index < 0) return
+        next.splice(over.after ? index + 1 : index, 0, dragging)
+        setOver(undefined)
         saveOrder(next).catch((cause) => setError(String(cause?.message ?? cause)))
       }
       const nothingHidden = !hideable().some((key) => !visible(key))
@@ -524,13 +533,23 @@ window.__ModuleLoader__.load({
                   'div',
                   {
                     key,
-                    className: `dca-row${dragging === key ? ' dca-row-dragging' : ''}`,
+                    className: `dca-row${dragging === key ? ' dca-row-dragging' : ''}${
+                      over?.key === key && dragging !== key ? (over.after ? ' dca-row-over-after' : ' dca-row-over-before') : ''
+                    }`,
                     draggable: ready && key !== OVERFLOW,
                     title: key === OVERFLOW ? undefined : '拖动这一行可以调整它在回答底部的顺序',
                     onDragStart: () => setDragging(key),
-                    onDragOver: (event) => event.preventDefault(),
-                    onDrop: () => drop(key),
-                    onDragEnd: () => setDragging(undefined),
+                    onDragOver: (event) => {
+                      if (key === OVERFLOW || !dragging) return
+                      event.preventDefault()
+                      const box = event.currentTarget.getBoundingClientRect()
+                      setOver({ key, after: event.clientY > box.top + box.height / 2 })
+                    },
+                    onDrop: drop,
+                    onDragEnd: () => {
+                      setDragging(undefined)
+                      setOver(undefined)
+                    },
                     onClick: () => {
                       if (!locked(key)) toggle(key)
                     },
