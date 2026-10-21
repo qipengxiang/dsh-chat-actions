@@ -86,3 +86,8 @@ dropping unknown keys, and the slot registrations.
   24 of them), but it produces no row, because rows come from what is rendered.
 - The `⋯` popover is placed with measured coordinates (24px cells, 32px card); a cell clips text and
   keeps the icon, and the name shows on hover.
+- Sorting only flattens a **direct** wrapper. The usage chip sits in its own box, and the shipped usage
+  popover measures that box, so it keeps its layout: `order` goes on the wrapper that is the real flex
+  item (`data-dca-slot`), not on the button.
+- Once the usage chip is collected into `⋯`, the shipped usage popover still opens at the chip's old
+  spot instead of following the cell.

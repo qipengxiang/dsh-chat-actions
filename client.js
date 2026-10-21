@@ -48,6 +48,10 @@ window.__ModuleLoader__.load({
 
     // Popover geometry: one square cell per hidden button, parked at the coordinates the cell measures.
     const CELL = 24
+    // Marks the flex item that carries a button's slot in the row: the button itself, or the wrapper
+    // the shipped markup puts around it (the usage chip). `order` goes on that element, not on the
+    // button, or it would order a box that isn't a flex item.
+    const SLOT_ATTR = 'data-dca-slot'
     const PAD = 4
     const CARD_HEIGHT = 32
     const OPEN = `${ROW}[data-dca-open]`
@@ -191,14 +195,29 @@ window.__ModuleLoader__.load({
             grew = true
           }
         }
-        for (const group of row.querySelectorAll(':scope > span, :scope > div, [data-dca-group] > span, [data-dca-group] > div')) {
+        // Only a direct child of the row is flattened. A wrapper deeper inside (the usage chip's own
+        // span) must keep its box: the shipped popover measures that box to place itself.
+        for (const group of row.querySelectorAll(':scope > span, :scope > div')) {
           if (group.getAttribute('data-dca-group') !== null) continue
-          const parent = group.parentElement
-          if (parent !== row && parent?.getAttribute('data-dca-group') !== '') continue
-          // A wrapper whose children are row items; the feedback slot already flattens itself.
+          // The feedback slot already flattens itself; our own cell must stay one box.
           if (group.getAttribute('data-slot') !== null || group.closest('.dca-more')) continue
           if (group.querySelector(`[${KEY_ATTR}]`) === null) continue
           group.setAttribute('data-dca-group', '')
+        }
+        // Now that the wrappers are known, mark the element that actually sits in the flex row.
+        for (const node of row.querySelectorAll(`[${KEY_ATTR}]`)) {
+          let slot = node
+          while (slot.parentElement !== null && slot.parentElement !== row) {
+            const parent = slot.parentElement
+            // Stop at the flattening boundary: a wrapper whose children are the row's flex items.
+            const flat = parent.getAttribute('data-dca-group') !== null || parent.style?.display === 'contents'
+            if (flat) break
+            slot = parent
+          }
+          if (slot !== node) node.removeAttribute(SLOT_ATTR)
+          if (slot.getAttribute(SLOT_ATTR) !== node.getAttribute(KEY_ATTR)) {
+            slot.setAttribute(SLOT_ATTR, node.getAttribute(KEY_ATTR))
+          }
         }
       }
       if (grew) {
@@ -233,7 +252,7 @@ window.__ModuleLoader__.load({
       // reordering mechanism — the shipped DOM is never moved, which a re-render would undo.
       rules.push(`${ROW} [data-dca-group]{display:contents}`)
       rules.push(`${ROW} .dca-more{order:9999}`)
-      for (const key of hideable()) rules.push(`${ROW} ${selector(key)}{order:${orderOf(key)}}`)
+      for (const key of hideable()) rules.push(`${ROW} [${SLOT_ATTR}="${key}"]{order:${orderOf(key)}}`)
       for (const key of hidden) rules.push(`${ROW} ${selector(key)}{display:none !important}`)
       // The cell measures itself and parks the card with two custom properties on the row: the hidden
       // buttons are shipped DOM, so they can only be moved by CSS and cannot live inside our card.
@@ -243,9 +262,13 @@ window.__ModuleLoader__.load({
         )
         hidden.forEach((key, index) => {
           const left = PAD + index * CELL
+          const park = `position:fixed; top:calc(var(--dca-t) + ${(CARD_HEIGHT - CELL) / 2}px); left:calc(var(--dca-l) + ${left}px); width:${CELL}px; height:${CELL}px`
           rules.push(
-            `${OPEN} ${selector(key)}{display:inline-flex !important; position:fixed; top:calc(var(--dca-t) + ${(CARD_HEIGHT - CELL) / 2}px); left:calc(var(--dca-l) + ${left}px); width:${CELL}px; height:${CELL}px; padding:0; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; white-space:nowrap; z-index:51}`,
+            `${OPEN} ${selector(key)}{display:inline-flex !important; ${park}; padding:0; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; white-space:nowrap; z-index:51}`,
           )
+          // A button sitting in a wrapper (the usage chip) drags the wrapper along: the shipped
+          // popover measures that box, so leaving it behind puts the popover at the page origin.
+          rules.push(`${OPEN} [${SLOT_ATTR}="${key}"]:not([${KEY_ATTR}]){${park}; z-index:51}`)
         })
         // The usage trigger is icon + live text; a popover cell only has room for the icon.
         if (hidden.includes('usage')) rules.push(`${OPEN} ${selector('usage')} > span{display:none}`)

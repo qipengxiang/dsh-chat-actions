@@ -84,6 +84,7 @@ const makeButton = (label, text = '', attrs = {}) => {
       values[key] = value
     },
     closest: () => null,
+    parentElement: null,
   }
 }
 
@@ -106,6 +107,7 @@ const timeNode = {
     this.values[key] = value
   },
   closest: () => null,
+  parentElement: null,
 }
 
 globalThis.MutationObserver = class {
@@ -126,7 +128,12 @@ const setupRow = (buttons) => {
               if (inner.includes('nth-of-type(2)')) return buttons.find((one) => one.values['aria-label'] === 'Bad response') ?? null
               return null
             },
-            querySelectorAll: (inner) => (String(inner).includes('span') ? [...buttons, timeNode] : buttons),
+            querySelectorAll: (inner) => {
+              const text = String(inner)
+              // No wrapper in this fake row: the flattening pass finds nothing to flatten.
+              if (text.startsWith(':scope >')) return []
+              return text.includes('span') ? [timeNode, ...buttons] : buttons
+            },
           },
         ]
       : []
@@ -206,9 +213,11 @@ assert.doesNotMatch(named, /data-dca-key="usage"\]\{display:none/)
 // order becomes plain `order` rules and an unlisted item keeps the position it rendered in.
 const ordered = await paint({ ...DEFAULTS, order: ['branch', 'copy'] })
 assert.match(ordered, /\[data-clock="end"\] \[data-dca-group\]\{display:contents\}/)
-assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="branch"\]\{order:0\}/)
-assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="copy"\]\{order:1\}/)
-assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="time"\]\{order:1[0-9][0-9]\}/)
+// `order` goes on the flex item (the button itself, or the wrapper holding it), never on a
+// shrunken box: the shipped usage popover measures that wrapper.
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-slot="branch"\]\{order:0\}/)
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-slot="copy"\]\{order:1\}/)
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-slot="time"\]\{order:1[0-9][0-9]\}/)
 assert.match(ordered, /\[data-clock="end"\] \.dca-more\{order:9999\}/)
 
 // The stamp hides like any other item.
