@@ -167,12 +167,9 @@ assert.match(
   collected,
   /\[data-clock="end"\]\[data-dca-open\] \[data-dca-key="dislike"\]\{display:inline-flex !important; position:fixed;[^}]*left:calc\(var\(--dca-l\) \+ 28px\);/,
 )
-assert.match(
-  collected,
-  /\[data-clock="end"\]\[data-dca-open\] \[data-dca-key="usage"\]\{display:inline-flex !important; position:fixed;[^}]*left:calc\(var\(--dca-l\) \+ 52px\);/,
-)
-// The usage trigger is icon + live text: the cell only keeps the icon.
-assert.match(collected, /\[data-clock="end"\]\[data-dca-open\] \[data-dca-key="usage"\] > span\{display:none\}/)
+// A button with a popover of its own (the usage chip) is not collected: the shipped popover measures
+// its anchor once, so a cell that moves the chip would open it somewhere else. It hides outright.
+assert.doesNotMatch(collected, /\[data-dca-open\] \[data-dca-key="usage"\]\{display:inline-flex/)
 // Flipped up: the shipped bubble is hidden and every cell draws the same label above the card, so
 // the card can sit next to the 「⋯」 instead of reserving the bubble's room below the icon.
 assert.match(
@@ -185,7 +182,7 @@ assert.match(
 )
 assert.match(
   collected,
-  /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] \[data-dca-key="usage"\]\[data-dca-name\]:hover::before\{[^}]*left:calc\(var\(--dca-l\) \+ 64px\);/,
+  /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] \[data-dca-key="dislike"\]\[data-dca-name\]:hover::before\{[^}]*left:calc\(var\(--dca-l\) \+ 40px\);/,
 )
 
 // One switch per rendered button, and a button this plugin does not ship is tagged with its own

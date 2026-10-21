@@ -89,5 +89,8 @@ dropping unknown keys, and the slot registrations.
 - Sorting only flattens a **direct** wrapper. The usage chip sits in its own box, and the shipped usage
   popover measures that box, so it keeps its layout: `order` goes on the wrapper that is the real flex
   item (`data-dca-slot`), not on the button.
-- Once the usage chip is collected into `⋯`, the shipped usage popover still opens at the chip's old
-  spot instead of following the cell.
+- A button with a popover of its own (the usage chip) is never collected: switching it off just hides
+  it. The shipped popover measures the chip's own box, so once that box is parked in a `⋯` cell the
+  popover can only land in the corner.
+- The usage chip and the stamp share one wrapper, so sorting treats the pair as one item: whichever
+  of the two comes first in the order moves it.

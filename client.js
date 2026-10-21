@@ -133,7 +133,20 @@ window.__ModuleLoader__.load({
     /** Everything hideable right now: whatever the rendered replies carry. */
     const hideable = () => found
 
+    /** Keys whose button opens a shipped popover of its own (the usage chip). */
+    const popovers = new Set()
+    const hasPopover = (key) => popovers.has(key)
+
     /** The 「⋯」 collection is opt-in: collapsed buttons stay fully hidden until it is on. */
+    /** Hidden buttons that can live in the popover. A button with its own popover stays out: the
+     *  shipped popover measures its anchor before the collector moves it, so it would open elsewhere. */
+    function collectable() {
+      return hideable()
+        .filter((key) => !visible(key))
+        .filter((key) => !hasPopover(key))
+        .sort((left, right) => orderOf(left) - orderOf(right))
+    }
+
     function overflowOn() {
       return current[OVERFLOW] === true && hideable().some((key) => !visible(key))
     }
@@ -174,6 +187,7 @@ window.__ModuleLoader__.load({
           if (button.getAttribute(KEY_ATTR) !== hit.key) button.setAttribute(KEY_ATTR, hit.key)
           if (button.getAttribute(NAME_ATTR) !== hit.name) button.setAttribute(NAME_ATTR, hit.name)
           names.set(hit.key, hit.name)
+          if (button.getAttribute('aria-haspopup') !== null) popovers.add(hit.key)
           if (found.includes(hit.key)) continue
           found.push(hit.key)
           grew = true
@@ -202,6 +216,9 @@ window.__ModuleLoader__.load({
           // The feedback slot already flattens itself; our own cell must stay one box.
           if (group.getAttribute('data-slot') !== null || group.closest('.dca-more')) continue
           if (group.querySelector(`[${KEY_ATTR}]`) === null) continue
+          // A wrapper holding a popover trigger keeps its box on purpose: the shipped popover measures
+          // that box, so the whole wrapper (usage chip + stamp) moves as one item instead.
+          if (group.querySelector('[aria-haspopup]') !== null) continue
           group.setAttribute('data-dca-group', '')
         }
         // Now that the wrappers are known, mark the element that actually sits in the flex row.
@@ -214,10 +231,12 @@ window.__ModuleLoader__.load({
             if (flat) break
             slot = parent
           }
+          const key = node.getAttribute(KEY_ATTR)
           if (slot !== node) node.removeAttribute(SLOT_ATTR)
-          if (slot.getAttribute(SLOT_ATTR) !== node.getAttribute(KEY_ATTR)) {
-            slot.setAttribute(SLOT_ATTR, node.getAttribute(KEY_ATTR))
-          }
+          // Two items can share one wrapper (usage chip + stamp): the earlier one in the user's order
+          // owns the wrapper, so the pair moves together instead of fighting over `order`.
+          const held = slot.getAttribute(SLOT_ATTR)
+          if (held === null || orderOf(key) < orderOf(held)) slot.setAttribute(SLOT_ATTR, key)
         }
       }
       if (grew) {
@@ -256,11 +275,11 @@ window.__ModuleLoader__.load({
       for (const key of hidden) rules.push(`${ROW} ${selector(key)}{display:none !important}`)
       // The cell measures itself and parks the card with two custom properties on the row: the hidden
       // buttons are shipped DOM, so they can only be moved by CSS and cannot live inside our card.
-      if (overflowOn()) {
+      if (overflowOn() && collectable().length > 0) {
         rules.push(
           `${OPEN} .dca-card{display:block; position:fixed; top:var(--dca-t); left:var(--dca-l); height:${CARD_HEIGHT}px; border-radius:10px; background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1); box-shadow:0 8px 24px rgba(0,0,0,0.16); pointer-events:none; z-index:50}`,
         )
-        hidden.forEach((key, index) => {
+        collectable().forEach((key, index) => {
           const left = PAD + index * CELL
           const park = `position:fixed; top:calc(var(--dca-t) + ${(CARD_HEIGHT - CELL) / 2}px); left:calc(var(--dca-l) + ${left}px); width:${CELL}px; height:${CELL}px`
           rules.push(
@@ -271,11 +290,11 @@ window.__ModuleLoader__.load({
           rules.push(`${OPEN} [${SLOT_ATTR}="${key}"]:not([${KEY_ATTR}]){${park}; z-index:51}`)
         })
         // The usage trigger is icon + live text; a popover cell only has room for the icon.
-        if (hidden.includes('usage')) rules.push(`${OPEN} ${selector('usage')} > span{display:none}`)
+        if (collectable().includes('usage')) rules.push(`${OPEN} ${selector('usage')} > span{display:none}`)
         // Flipped up: the shipped bubble hangs under the hovered cell and would force a wide gap
         // over the 「⋯」, so hide it and draw the same label above the cell instead.
         rules.push(`${OPEN}[data-dca-flip="up"] [role="tooltip"]{display:none !important}`)
-        hidden.forEach((key, index) => {
+        collectable().forEach((key, index) => {
           const center = PAD + index * CELL + CELL / 2
           rules.push(
             `${OPEN}[data-dca-flip="up"] ${selector(key)}[${NAME_ATTR}]:hover::before{content:attr(${NAME_ATTR}); position:fixed; top:calc(var(--dca-t) - 28px); left:calc(var(--dca-l) + ${center}px); transform:translateX(-50%); padding:2px 8px; border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font-size:12px; line-height:1.5; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,0.14); z-index:52}`,
@@ -384,9 +403,7 @@ window.__ModuleLoader__.load({
       }, [])
 
       const row = () => ref.current?.closest(ROW) ?? null
-      const hidden = hideable()
-        .filter((key) => !visible(key))
-        .sort((left, right) => orderOf(left) - orderOf(right))
+      const hidden = collectable()
       const collect = overflowOn() && hidden.length > 0
 
       // The popover rules key off the row, and the row is shipped DOM: it only carries our marker and
