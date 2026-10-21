@@ -7,15 +7,11 @@ hidden ones one click away behind a single `⋯`.
 
 ## The buttons
 
-The switches in its settings page map one to one onto the action row at the end of a reply:
-
-| Switch | Button |
-| --- | --- |
-| 复制 | copy the whole answer |
-| 好评 | mark the answer as a good one |
-| 差评 | mark the answer as a bad one |
-| 分支 | continue from this reply in a new conversation |
-| 用量 | token usage of this reply |
+The settings page lists exactly the buttons a rendered reply carries: open one assistant answer and
+the page grows a switch per button it has. The shipped four keep the wording above; anything else
+(another plugin's button, one you added by hand) is listed under its own name. No switch exists for
+a button that is not on screen, and no button is listed twice — the usage chip, for instance, has a
+text label of its own, so it shows up once under that name instead of as a second 「用量」.
 
 The copy button on a code block belongs to the editor, not to this row, and is never touched.
 
@@ -77,6 +73,12 @@ dropping unknown keys, and the slot registrations.
   and last direct button, the only dialog trigger, the first two feedback buttons) — the `shortcut:`
   comment in `client.js` marks that fallback.
 - Tagging runs in the mutation callback before the stylesheet is written, so a new button does not
-  flash visible first; a switch only appears on the settings page after a reply has rendered once.
+  flash visible first; the settings page only lists a switch after a reply has rendered (before that
+  it shows a one-line hint).
+- Digits in a live label are folded (`Usage 129K tok` → `Usage #K tok`), so a changing counter cannot
+  mint switches; the cost is that two buttons whose names differ only in digits, or two with the same
+  name, share one switch.
+- A key stays in `extra` in `$DSH_HOME/dsh-chat-actions.json` after its button stops appearing (up to
+  24 of them), but it produces no row, because rows come from what is rendered.
 - The `⋯` popover is placed with measured coordinates (24px cells, 32px card); a cell clips text and
   keeps the icon, and the name shows on hover.

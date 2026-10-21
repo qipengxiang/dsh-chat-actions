@@ -93,8 +93,10 @@ window.__ModuleLoader__.load({
     // and nothing else. A button this plugin does not ship keeps its own name as its key.
     const KEY_ATTR = 'data-dca-key'
     const NAME_ATTR = 'data-dca-name'
-    const extras = []
-    // Last name seen per discovered key: the switch should read like the button, not like its key.
+    // Keys of the buttons actually rendered under a reply, in the order they showed up: the settings
+    // list is this list, so nothing appears there that a reply does not carry.
+    const found = []
+    // Last name seen per key: the switch should read like the button, not like its key.
     const names = new Map()
 
     const watchers = new Set()
@@ -107,8 +109,8 @@ window.__ModuleLoader__.load({
       return (TARGET[key] ? current[key] : current.extra?.[key]) !== false
     }
 
-    /** Everything hideable right now, the shipped five first. */
-    const hideable = () => [...ORDER, ...extras]
+    /** Everything hideable right now: whatever the rendered replies carry. */
+    const hideable = () => found
 
     /** The 「⋯」 collection is opt-in: collapsed buttons stay fully hidden until it is on. */
     function overflowOn() {
@@ -123,7 +125,7 @@ window.__ModuleLoader__.load({
         .slice(0, 60)
       if (NAMES[name] && !claimed.has(NAMES[name])) return { key: NAMES[name], name: NAMES[name] }
       // A live counter in the label (the usage chip carries the token count) must not mint a switch per value.
-      const key = name.replace(/\d+/g, '#')
+      const key = name.replace(/\d+([.,]\d+)?/g, '#')
       if (key) return claimed.has(key) ? undefined : { key, name }
       // Icon-only: the shipped five were read off these positions.
       for (const builtin of ORDER) {
@@ -145,15 +147,14 @@ window.__ModuleLoader__.load({
         const claimed = new Set()
         for (const button of row.querySelectorAll('button')) {
           if (button.closest('.dca-more')) continue
-          const found = keyOf(row, button, claimed)
-          if (!found) continue
-          claimed.add(found.key)
-          if (button.getAttribute(KEY_ATTR) !== found.key) button.setAttribute(KEY_ATTR, found.key)
-          if (button.getAttribute(NAME_ATTR) !== found.name) button.setAttribute(NAME_ATTR, found.name)
-          names.set(found.key, found.name)
-          if (ORDER.includes(found.key) || extras.includes(found.key)) continue
-          extras.push(found.key)
-          extras.sort()
+          const hit = keyOf(row, button, claimed)
+          if (!hit) continue
+          claimed.add(hit.key)
+          if (button.getAttribute(KEY_ATTR) !== hit.key) button.setAttribute(KEY_ATTR, hit.key)
+          if (button.getAttribute(NAME_ATTR) !== hit.name) button.setAttribute(NAME_ATTR, hit.name)
+          names.set(hit.key, hit.name)
+          if (found.includes(hit.key)) continue
+          found.push(hit.key)
           grew = true
         }
       }
@@ -393,6 +394,13 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Settings row for one observed key: the shipped wording when the key is a shipped button. */
+    function rowOf(key) {
+      const shipped = ACTIONS.find(([id]) => id === key)
+      if (shipped) return shipped
+      return [key, names.get(key) ?? key, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏']
+    }
+
     function Page() {
       const [error, setError] = React.useState(undefined)
       const [busy, setBusy] = React.useState(undefined)
@@ -426,11 +434,8 @@ window.__ModuleLoader__.load({
       }
 
       // The collection switch gates on having something to collect; the rest live under it.
-      const rows = [
-        OVERFLOW_ROW,
-        ...ACTIONS,
-        ...extras.map((id) => [id, names.get(id) ?? id, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏']),
-      ]
+      // One switch per button a reply actually carries: an unrendered button has no switch to strand.
+      const rows = found.length > 0 ? [OVERFLOW_ROW, ...found.map(rowOf)] : []
       const nothingHidden = !hideable().some((key) => !visible(key))
       const locked = (key) => (key === OVERFLOW && nothingHidden) || busy !== undefined
 
@@ -440,7 +445,10 @@ window.__ModuleLoader__.load({
         h('style', {}, CSS),
         h('h2', { className: 'dca-title' }, 'dsh-chat-actions'),
         h('p', { className: 'dca-note' }, '关掉的按钮会在每条回答底部隐藏。这里只管助手回答，代码块自带的复制按钮不受影响。'),
-        ready
+        ready && rows.length === 0
+          ? h('p', { className: 'dca-note' }, '还没有可管的按钮：先在对话里让一条助手回答渲染出来，它底部出现的每个按钮都会列在这里。')
+          : null,
+        ready && rows.length > 0
           ? h(
               'div',
               { className: 'dca-list' },

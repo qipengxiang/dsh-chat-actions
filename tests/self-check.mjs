@@ -72,6 +72,53 @@ async function paint(saved) {
   return appended[0].textContent
 }
 
+// Every reply row under test carries these buttons; `setupRow` decides which of them a row has.
+const makeButton = (label, text = '', attrs = {}) => {
+  const values = { ...(label ? { 'aria-label': label } : {}), ...attrs }
+  return {
+    values,
+    textContent: text,
+    getAttribute: (key) => values[key] ?? null,
+    setAttribute: (key, value) => {
+      values[key] = value
+    },
+    closest: () => null,
+  }
+}
+
+const copyButton = makeButton('Copy')
+const likeButton = makeButton('Good response')
+const dislikeButton = makeButton('Bad response')
+const branchButton = makeButton('Branch into a new conversation')
+const usageButton = makeButton(undefined, '', { 'aria-haspopup': 'dialog' })
+const toolButton = makeButton('My tool', 'My tool')
+
+globalThis.MutationObserver = class {
+  observe() {}
+}
+
+/** A reply row holding exactly these buttons, answerable the way the shipped selectors ask. */
+const setupRow = (buttons) => {
+  documentStub.querySelectorAll = (selector) =>
+    selector === '[data-clock="end"]'
+      ? [
+          {
+            querySelector: (inner) => {
+              if (inner.includes('aria-haspopup')) return buttons.find((one) => one.values['aria-haspopup'] === 'dialog') ?? null
+              if (inner.includes('first-of-type')) return buttons[0] ?? null
+              if (inner.includes('last-of-type')) return buttons[buttons.length - 1] ?? null
+              if (inner.includes('nth-of-type(1)')) return buttons.find((one) => one.values['aria-label'] === 'Good response') ?? null
+              if (inner.includes('nth-of-type(2)')) return buttons.find((one) => one.values['aria-label'] === 'Bad response') ?? null
+              return null
+            },
+            querySelectorAll: () => buttons,
+          },
+        ]
+      : []
+}
+
+setupRow([copyButton, likeButton, dislikeButton, branchButton, usageButton])
+
 const HIDDEN = { copy: false, like: true, dislike: false, branch: true, usage: false }
 
 const K = (key) => `\\[data-clock="end"\\] \\[data-dca-key="${key}"\\]`
@@ -119,40 +166,26 @@ assert.match(
   /\[data-clock="end"\]\[data-dca-open\]\[data-dca-flip="up"\] \[data-dca-key="usage"\]\[data-dca-name\]:hover::before\{[^}]*left:calc\(var\(--dca-l\) \+ 64px\);/,
 )
 
-// A button this plugin does not ship is tagged with its own name and gets its own switch — and it
-// cannot steal a switch from the shipped button it was inserted next to.
-globalThis.MutationObserver = class {
-  observe() {}
-}
-const makeButton = (label, text = '') => {
-  const attrs = { 'aria-label': label }
-  return {
-    attrs,
-    textContent: text,
-    getAttribute: (key) => attrs[key] ?? null,
-    setAttribute: (key, value) => {
-      attrs[key] = value
-    },
-    closest: () => null,
-  }
-}
-const copyButton = makeButton('Copy')
-const extraButton = makeButton('My tool', 'My tool')
-const branchButton = makeButton('Branch into a new conversation')
-documentStub.querySelectorAll = (selector) =>
-  selector === '[data-clock="end"]'
-    ? [{ querySelector: () => null, querySelectorAll: () => [copyButton, extraButton, branchButton] }]
-    : []
-
+// One switch per rendered button, and a button this plugin does not ship is tagged with its own
+// name — it cannot steal the switch of the shipped button next to it.
+setupRow([copyButton, toolButton, branchButton])
 const discovered = await paint({ ...DEFAULTS, extra: { 'My tool': false } })
-assert.equal(copyButton.attrs['data-dca-key'], 'copy')
-assert.equal(branchButton.attrs['data-dca-key'], 'branch')
-assert.equal(extraButton.attrs['data-dca-key'], 'My tool')
-assert.equal(extraButton.attrs['data-dca-name'], 'My tool')
+assert.equal(copyButton.values['data-dca-key'], 'copy')
+assert.equal(branchButton.values['data-dca-key'], 'branch')
+assert.equal(toolButton.values['data-dca-key'], 'My tool')
+assert.equal(toolButton.values['data-dca-name'], 'My tool')
 assert.match(discovered, /\[data-clock="end"\] \[data-dca-key="My tool"\]\{display:none !important\}/)
 // Nothing shipped is hidden, so the shipped five paint no hide rule — the row is tagged, not guessed.
 assert.doesNotMatch(discovered, /data-dca-key="copy"\]\{display:none/)
 assert.doesNotMatch(discovered, /data-dca-key="branch"\]\{display:none/)
+
+// A named usage chip is its own button: it is listed once, under its own name, not doubled by the
+// icon-only dialog fallback that used to guess it.
+const namedUsage = makeButton(undefined, 'Usage 1.2K tok')
+setupRow([copyButton, namedUsage, branchButton])
+const named = await paint({ ...DEFAULTS, usage: false })
+assert.equal(namedUsage.values['data-dca-key'], 'Usage #K tok')
+assert.doesNotMatch(named, /data-dca-key="usage"\]\{display:none/)
 
 // Collection on but nothing hidden: no popover at all.
 const idle = await paint({ ...DEFAULTS, overflow: true })
@@ -162,8 +195,8 @@ assert.doesNotMatch(idle, /\.dca-card\{display:block/)
 
 // A boot read is retried, and both outcomes are recorded where a lost launch can be read back.
 assert.deepEqual(
-  diagBodies.filter((body) => body.phase === 'ok').map((body) => body.hidden).slice(-3),
-  ['copy,dislike,usage', 'My tool', ''],
+  diagBodies.filter((body) => body.phase === 'ok').map((body) => body.hidden).slice(0, 4),
+  ['copy,dislike,usage', 'copy,dislike,usage', 'My tool', ''],
 )
 
 // A read that fails at launch is retried instead of leaving a whole session unthemed.
