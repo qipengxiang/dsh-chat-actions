@@ -71,11 +71,12 @@ dropping unknown keys, and the slot registrations.
 
 ## Limits
 
-- Buttons are found positionally inside the shipped action row: copy is the first direct button,
-  branch the last, usage the only dialog trigger, and the feedback pair the first two buttons of
-  `conversation.chat.assistant-actions`. A shipped button inserted before copy, or another plugin's
-  entry in front of the feedback pair, would shift what a switch hides. The `shortcut:` comment in
-  `client.js` marks this.
-- The `⋯` popover is placed with measured coordinates (24px cells, 32px card). Flipped up, its
-  labels are drawn from each button's `aria-label`; a shipped button without one would show the
-  cell but no text.
+- Buttons are found by name first (`aria-label`, then `title`, then text) and tagged with
+  `data-dca-key`; the stylesheet only ever matches that attribute, so extra or reordered buttons
+  cannot shift what a switch hides. Only a nameless icon button falls back to its position (first
+  and last direct button, the only dialog trigger, the first two feedback buttons) — the `shortcut:`
+  comment in `client.js` marks that fallback.
+- Tagging runs in the mutation callback before the stylesheet is written, so a new button does not
+  flash visible first; a switch only appears on the settings page after a reply has rendered once.
+- The `⋯` popover is placed with measured coordinates (24px cells, 32px card); a cell clips text and
+  keeps the icon, and the name shows on hover.

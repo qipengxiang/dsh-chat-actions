@@ -28,13 +28,16 @@ window.__ModuleLoader__.load({
     const OVERFLOW = 'overflow'
     const OVERFLOW_ROW = [OVERFLOW, '收进「⋯」', '有按钮被隐藏时才能开启；开启后被隐藏的按钮收进一个「⋯」，点开就能用']
 
-    // Read off the shipped row: copy is the first direct button, branch the last one (absent when
-    // the message cannot branch), usage the only dialog trigger, and the feedback pair is the
-    // assistant-actions slot's first two buttons. Counted `nth-of-type`, not `nth-child`: the slot
-    // also holds the hover bubble (`span[role="tooltip"]`), which shifts plain child indexes.
-    // shortcut: positional, so a shipped button before copy, or another plugin's entry in front of
-    // the feedback pair, shifts the target; match icons instead once that ships.
+    // A button is identified by the name it carries, so a button someone else adds to the row cannot
+    // shift the switches onto its neighbours. The names are the shipped `aria-label`s (never the
+    // localized tooltip text), and the position below is only a fallback for an icon-only button.
     const ROW = '[data-clock="end"]'
+    const NAMES = {
+      Copy: 'copy',
+      'Good response': 'like',
+      'Bad response': 'dislike',
+      'Branch into a new conversation': 'branch',
+    }
     const TARGET = {
       copy: '> button:first-of-type',
       like: '[data-slot="conversation.chat.assistant-actions"] > button:nth-of-type(1)',
@@ -86,17 +89,82 @@ window.__ModuleLoader__.load({
     let loading
     let loaded = false
 
+    // Everything under a reply is tagged with the key it answers to; the stylesheet matches that tag
+    // and nothing else. A button this plugin does not ship keeps its own name as its key.
+    const KEY_ATTR = 'data-dca-key'
+    const NAME_ATTR = 'data-dca-name'
+    const extras = []
+
     const watchers = new Set()
     const notify = () => watchers.forEach((watcher) => watcher())
 
+    const selector = (key) => `[${KEY_ATTR}="${key}"]`
+
     /** Visible unless the host says otherwise; unknown keys never hide anything. */
     function visible(key) {
-      return current[key] !== false
+      return (TARGET[key] ? current[key] : current.extra?.[key]) !== false
     }
+
+    /** Everything hideable right now, the shipped five first. */
+    const hideable = () => [...ORDER, ...extras]
 
     /** The 「⋯」 collection is opt-in: collapsed buttons stay fully hidden until it is on. */
     function overflowOn() {
-      return current[OVERFLOW] === true && ORDER.some((key) => !visible(key))
+      return current[OVERFLOW] === true && hideable().some((key) => !visible(key))
+    }
+
+    /** The key one button answers to: a shipped name, the name it carries, or its position if unnamed. */
+    function keyOf(row, button, claimed) {
+      const name = String(button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '')
+        .trim()
+        .replace(/["\\]/g, '')
+        .slice(0, 60)
+      if (NAMES[name] && !claimed.has(NAMES[name])) return { key: NAMES[name], name: NAMES[name] }
+      // A live counter in the label (the usage chip carries the token count) must not mint a switch per value.
+      const key = name.replace(/\d+/g, '#')
+      if (key) return claimed.has(key) ? undefined : { key, name }
+      // Icon-only: the shipped five were read off these positions.
+      for (const builtin of ORDER) {
+        if (claimed.has(builtin)) continue
+        if (row.querySelector(`:scope ${TARGET[builtin]}`) === button) return { key: builtin, name: builtin }
+      }
+      return undefined
+    }
+
+    /**
+     * Tag every button under a reply with the key it answers to, and repaint when a button this
+     * plugin does not ship turns up. Rows mount long after this module applies, so `watch` calls
+     * this on every change; tagging runs before the frame paints, so nothing flashes hidden.
+     */
+    function scan() {
+      if (typeof document.querySelectorAll !== 'function') return
+      let grew = false
+      for (const row of document.querySelectorAll(ROW)) {
+        const claimed = new Set()
+        for (const button of row.querySelectorAll('button')) {
+          if (button.closest('.dca-more')) continue
+          const found = keyOf(row, button, claimed)
+          if (!found) continue
+          claimed.add(found.key)
+          if (button.getAttribute(KEY_ATTR) !== found.key) button.setAttribute(KEY_ATTR, found.key)
+          if (button.getAttribute(NAME_ATTR) !== found.name) button.setAttribute(NAME_ATTR, found.name)
+          if (ORDER.includes(found.key) || extras.includes(found.key)) continue
+          extras.push(found.key)
+          extras.sort()
+          grew = true
+        }
+      }
+      if (grew) {
+        paint()
+        notify()
+      }
+    }
+
+    /** Chat rows come and go; the buttons they carry do not exist when this module applies. */
+    function watch() {
+      if (typeof MutationObserver !== 'function' || !document.body) return
+      new MutationObserver(() => scan()).observe(document.body, { childList: true, subtree: true })
+      scan()
     }
 
     function styleNode() {
@@ -110,9 +178,9 @@ window.__ModuleLoader__.load({
     }
 
     function paint() {
-      const hidden = ORDER.filter((key) => !visible(key))
+      const hidden = hideable().filter((key) => !visible(key))
       const rules = [BASE]
-      for (const key of hidden) rules.push(`${ROW} ${TARGET[key]}{display:none !important}`)
+      for (const key of hidden) rules.push(`${ROW} ${selector(key)}{display:none !important}`)
       // The cell measures itself and parks the card with two custom properties on the row: the hidden
       // buttons are shipped DOM, so they can only be moved by CSS and cannot live inside our card.
       if (overflowOn()) {
@@ -122,18 +190,18 @@ window.__ModuleLoader__.load({
         hidden.forEach((key, index) => {
           const left = PAD + index * CELL
           rules.push(
-            `${OPEN} ${TARGET[key]}{display:inline-flex !important; position:fixed; top:calc(var(--dca-t) + ${(CARD_HEIGHT - CELL) / 2}px); left:calc(var(--dca-l) + ${left}px); width:${CELL}px; height:${CELL}px; padding:0; align-items:center; justify-content:center; border-radius:6px; z-index:51}`,
+            `${OPEN} ${selector(key)}{display:inline-flex !important; position:fixed; top:calc(var(--dca-t) + ${(CARD_HEIGHT - CELL) / 2}px); left:calc(var(--dca-l) + ${left}px); width:${CELL}px; height:${CELL}px; padding:0; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; white-space:nowrap; z-index:51}`,
           )
         })
         // The usage trigger is icon + live text; a popover cell only has room for the icon.
-        if (hidden.includes('usage')) rules.push(`${OPEN} ${TARGET.usage} > span{display:none}`)
+        if (hidden.includes('usage')) rules.push(`${OPEN} ${selector('usage')} > span{display:none}`)
         // Flipped up: the shipped bubble hangs under the hovered cell and would force a wide gap
         // over the 「⋯」, so hide it and draw the same label above the cell instead.
         rules.push(`${OPEN}[data-dca-flip="up"] [role="tooltip"]{display:none !important}`)
         hidden.forEach((key, index) => {
           const center = PAD + index * CELL + CELL / 2
           rules.push(
-            `${OPEN}[data-dca-flip="up"] ${TARGET[key]}[aria-label]:hover::before{content:attr(aria-label); position:fixed; top:calc(var(--dca-t) - 28px); left:calc(var(--dca-l) + ${center}px); transform:translateX(-50%); padding:2px 8px; border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font-size:12px; line-height:1.5; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,0.14); z-index:52}`,
+            `${OPEN}[data-dca-flip="up"] ${selector(key)}[${NAME_ATTR}]:hover::before{content:attr(${NAME_ATTR}); position:fixed; top:calc(var(--dca-t) - 28px); left:calc(var(--dca-l) + ${center}px); transform:translateX(-50%); padding:2px 8px; border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font-size:12px; line-height:1.5; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,0.14); z-index:52}`,
           )
         })
       }
@@ -185,7 +253,7 @@ window.__ModuleLoader__.load({
           loaded = true
           paint()
           notify()
-          diag({ phase: 'ok', hidden: ORDER.filter((key) => !visible(key)).join(','), rules: styleNode().textContent.length })
+          diag({ phase: 'ok', hidden: hideable().filter((key) => !visible(key)).join(','), rules: styleNode().textContent.length })
         })
         .finally(() => {
           loading = undefined
@@ -194,7 +262,9 @@ window.__ModuleLoader__.load({
     }
 
     function save(key) {
-      return call('POST', { [key]: !visible(key) }).then((saved) => {
+      // Shipped buttons are top-level keys; a discovered one lives in the per-button `extra` map.
+      const patch = TARGET[key] ? { [key]: !visible(key) } : { extra: { [key]: !visible(key) } }
+      return call('POST', patch).then((saved) => {
         current = saved
         paint()
         notify()
@@ -228,7 +298,7 @@ window.__ModuleLoader__.load({
       }, [])
 
       const row = () => ref.current?.closest(ROW) ?? null
-      const hidden = ORDER.filter((key) => !visible(key))
+      const hidden = hideable().filter((key) => !visible(key))
       const collect = overflowOn() && hidden.length > 0
 
       // The popover rules key off the row, and the row is shipped DOM: it only carries our marker and
@@ -324,10 +394,15 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(undefined)
       const [busy, setBusy] = React.useState(undefined)
       const [ready, setReady] = React.useState(false)
+      const [, bump] = React.useReducer((count) => count + 1, 0)
 
       React.useEffect(() => {
         let alive = true
-        const watcher = () => alive && setReady(true)
+        const watcher = () => {
+          if (!alive) return
+          bump()
+          setReady(true)
+        }
         watchers.add(watcher)
         load().then(
           () => alive && setReady(true),
@@ -348,8 +423,8 @@ window.__ModuleLoader__.load({
       }
 
       // The collection switch gates on having something to collect; the rest live under it.
-      const rows = [OVERFLOW_ROW, ...ACTIONS]
-      const nothingHidden = !ORDER.some((key) => !visible(key))
+      const rows = [OVERFLOW_ROW, ...ACTIONS, ...extras.map((id) => [id, id, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏'])]
+      const nothingHidden = !hideable().some((key) => !visible(key))
       const locked = (key) => (key === OVERFLOW && nothingHidden) || busy !== undefined
 
       return h(
@@ -392,6 +467,7 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         paint()
         void load().catch(() => {})
+        watch()
         // A settings nav entry of its own: the Plugins page's tabs buried this page two clicks deep.
         ctx.slots.inject('settings.section', () =>
           ctx.slots.register({ name: 'settings.section', id: 'dsh-chat-actions', order: 130, label: () => 'dsh-chat-actions' }, Page),
