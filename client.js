@@ -94,6 +94,8 @@ window.__ModuleLoader__.load({
     const KEY_ATTR = 'data-dca-key'
     const NAME_ATTR = 'data-dca-name'
     const extras = []
+    // Last name seen per discovered key: the switch should read like the button, not like its key.
+    const names = new Map()
 
     const watchers = new Set()
     const notify = () => watchers.forEach((watcher) => watcher())
@@ -148,6 +150,7 @@ window.__ModuleLoader__.load({
           claimed.add(found.key)
           if (button.getAttribute(KEY_ATTR) !== found.key) button.setAttribute(KEY_ATTR, found.key)
           if (button.getAttribute(NAME_ATTR) !== found.name) button.setAttribute(NAME_ATTR, found.name)
+          names.set(found.key, found.name)
           if (ORDER.includes(found.key) || extras.includes(found.key)) continue
           extras.push(found.key)
           extras.sort()
@@ -423,7 +426,11 @@ window.__ModuleLoader__.load({
       }
 
       // The collection switch gates on having something to collect; the rest live under it.
-      const rows = [OVERFLOW_ROW, ...ACTIONS, ...extras.map((id) => [id, id, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏'])]
+      const rows = [
+        OVERFLOW_ROW,
+        ...ACTIONS,
+        ...extras.map((id) => [id, names.get(id) ?? id, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏']),
+      ]
       const nothingHidden = !hideable().some((key) => !visible(key))
       const locked = (key) => (key === OVERFLOW && nothingHidden) || busy !== undefined
 
