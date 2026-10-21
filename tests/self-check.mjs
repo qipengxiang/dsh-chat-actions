@@ -78,6 +78,7 @@ const makeButton = (label, text = '', attrs = {}) => {
   return {
     values,
     textContent: text,
+    children: [],
     getAttribute: (key) => values[key] ?? null,
     setAttribute: (key, value) => {
       values[key] = value
@@ -92,6 +93,20 @@ const dislikeButton = makeButton('Bad response')
 const branchButton = makeButton('Branch into a new conversation')
 const usageButton = makeButton(undefined, '', { 'aria-haspopup': 'dialog' })
 const toolButton = makeButton('My tool', 'My tool')
+
+// The stamp is a row item too: neither clickable nor a button, but hideable and orderable.
+const timeNode = {
+  children: [],
+  textContent: '13:17',
+  values: {},
+  getAttribute(key) {
+    return this.values[key] ?? null
+  },
+  setAttribute(key, value) {
+    this.values[key] = value
+  },
+  closest: () => null,
+}
 
 globalThis.MutationObserver = class {
   observe() {}
@@ -111,7 +126,7 @@ const setupRow = (buttons) => {
               if (inner.includes('nth-of-type(2)')) return buttons.find((one) => one.values['aria-label'] === 'Bad response') ?? null
               return null
             },
-            querySelectorAll: () => buttons,
+            querySelectorAll: (inner) => (String(inner).includes('span') ? [...buttons, timeNode] : buttons),
           },
         ]
       : []
@@ -128,8 +143,8 @@ const plain = await paint({ ...HIDDEN, overflow: false })
 assert.match(plain, /\[data-clock="end"\] \[data-dca-key="copy"\]\{display:none !important\}/)
 assert.match(plain, /\[data-clock="end"\] \[data-dca-key="dislike"\]\{display:none !important\}/)
 assert.match(plain, /\[data-clock="end"\] \[data-dca-key="usage"\]\{display:none !important\}/)
-assert.doesNotMatch(plain, /data-dca-key="like"/)
-assert.doesNotMatch(plain, /data-dca-key="branch"/)
+assert.doesNotMatch(plain, /data-dca-key="like"\]\{display:none/)
+assert.doesNotMatch(plain, /data-dca-key="branch"\]\{display:none/)
 assert.doesNotMatch(plain, /data-dca-open/)
 
 // Collection on: still hidden until opened, then one 24px cell per hidden button, parked at the
@@ -186,6 +201,19 @@ setupRow([copyButton, namedUsage, branchButton])
 const named = await paint({ ...DEFAULTS, usage: false })
 assert.equal(namedUsage.values['data-dca-key'], 'Usage #K tok')
 assert.doesNotMatch(named, /data-dca-key="usage"\]\{display:none/)
+
+// Order is the user's: every item of the row is a flex item (wrappers flattened), so the saved
+// order becomes plain `order` rules and an unlisted item keeps the position it rendered in.
+const ordered = await paint({ ...DEFAULTS, order: ['branch', 'copy'] })
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-group\]\{display:contents\}/)
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="branch"\]\{order:0\}/)
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="copy"\]\{order:1\}/)
+assert.match(ordered, /\[data-clock="end"\] \[data-dca-key="time"\]\{order:1[0-9][0-9]\}/)
+assert.match(ordered, /\[data-clock="end"\] \.dca-more\{order:9999\}/)
+
+// The stamp hides like any other item.
+const stampHidden = await paint({ ...DEFAULTS, time: false })
+assert.match(stampHidden, /\[data-clock="end"\] \[data-dca-key="time"\]\{display:none !important\}/)
 
 // Collection on but nothing hidden: no popover at all.
 const idle = await paint({ ...DEFAULTS, overflow: true })

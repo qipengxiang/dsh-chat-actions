@@ -13,6 +13,10 @@ the page grows a switch per button it has. The shipped four keep the wording abo
 a button that is not on screen, and no button is listed twice — the usage chip, for instance, has a
 text label of its own, so it shows up once under that name instead of as a second 「用量」.
 
+Drag a switch row to set where that item sits in the row: the order is saved as dragged and
+applies to every reply. The time stamp is an item too — it cannot be clicked, but it can be hidden
+and moved like the rest.
+
 The copy button on a code block belongs to the editor, not to this row, and is never touched.
 
 ## 收进「⋯」

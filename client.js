@@ -73,6 +73,9 @@ window.__ModuleLoader__.load({
 .dca-row:hover .dca-row-title { color: var(--dsw-alias-brand-primary); }
 .dca-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .dca-row-title { font-size: 13px; font-weight: 500; color: var(--dsw-alias-label-primary); transition: color 120ms ease; }
+.dca-row[draggable='true'] { cursor: grab; }
+.dca-row[draggable='true']:active { cursor: grabbing; }
+.dca-row-dragging { opacity: 0.45; }
 .dca-row-desc { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
 .dca-switch { position: relative; flex: none; width: 34px; height: 20px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); padding: 0; cursor: pointer; transition: background 140ms ease, border-color 140ms ease; }
 .dca-switch[aria-checked='true'] { background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
@@ -104,9 +107,19 @@ window.__ModuleLoader__.load({
 
     const selector = (key) => `[${KEY_ATTR}="${key}"]`
 
+    /** The time stamp is not clickable, but it is a thing in the row like the buttons: it can be ordered and hidden. */
+    const TIME = 'time'
+    const SHIPPED = new Set([...ORDER, TIME])
+
     /** Visible unless the host says otherwise; unknown keys never hide anything. */
     function visible(key) {
-      return (TARGET[key] ? current[key] : current.extra?.[key]) !== false
+      return (SHIPPED.has(key) ? current[key] : current.extra?.[key]) !== false
+    }
+
+    /** Position in the user's order; unlisted items keep the position they were rendered in. */
+    function orderOf(key) {
+      const index = (Array.isArray(current.order) ? current.order : []).indexOf(key)
+      return index >= 0 ? index : 100 + Math.max(0, found.indexOf(key))
     }
 
     /** Everything hideable right now: whatever the rendered replies carry. */
@@ -158,6 +171,32 @@ window.__ModuleLoader__.load({
           grew = true
         }
       }
+      // The stamp and the row's own sub-groups are not buttons, so they are tagged on their own: a
+      // flattened group lets every item of the row be ordered as one flex list.
+      for (const row of document.querySelectorAll(ROW)) {
+        for (const node of row.querySelectorAll('span')) {
+          if (!node.children || node.children.length > 0) continue
+          if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(node.textContent.trim())) continue
+          if (node.getAttribute(KEY_ATTR) !== TIME) {
+            node.setAttribute(KEY_ATTR, TIME)
+            node.setAttribute(NAME_ATTR, '时间')
+          }
+          names.set(TIME, '时间')
+          if (!found.includes(TIME)) {
+            found.push(TIME)
+            grew = true
+          }
+        }
+        for (const group of row.querySelectorAll(':scope > span, :scope > div, [data-dca-group] > span, [data-dca-group] > div')) {
+          if (group.getAttribute('data-dca-group') !== null) continue
+          const parent = group.parentElement
+          if (parent !== row && parent?.getAttribute('data-dca-group') !== '') continue
+          // A wrapper whose children are row items; the feedback slot already flattens itself.
+          if (group.getAttribute('data-slot') !== null || group.closest('.dca-more')) continue
+          if (group.querySelector(`[${KEY_ATTR}]`) === null) continue
+          group.setAttribute('data-dca-group', '')
+        }
+      }
       if (grew) {
         paint()
         notify()
@@ -182,8 +221,15 @@ window.__ModuleLoader__.load({
     }
 
     function paint() {
-      const hidden = hideable().filter((key) => !visible(key))
+      const hidden = hideable()
+        .filter((key) => !visible(key))
+        .sort((left, right) => orderOf(left) - orderOf(right))
       const rules = [BASE]
+      // Every item of the row is a flex item once the wrappers are flattened, so `order` is the whole
+      // reordering mechanism — the shipped DOM is never moved, which a re-render would undo.
+      rules.push(`${ROW} [data-dca-group]{display:contents}`)
+      rules.push(`${ROW} .dca-more{order:9999}`)
+      for (const key of hideable()) rules.push(`${ROW} ${selector(key)}{order:${orderOf(key)}}`)
       for (const key of hidden) rules.push(`${ROW} ${selector(key)}{display:none !important}`)
       // The cell measures itself and parks the card with two custom properties on the row: the hidden
       // buttons are shipped DOM, so they can only be moved by CSS and cannot live inside our card.
@@ -267,8 +313,17 @@ window.__ModuleLoader__.load({
 
     function save(key) {
       // Shipped buttons are top-level keys; a discovered one lives in the per-button `extra` map.
-      const patch = TARGET[key] ? { [key]: !visible(key) } : { extra: { [key]: !visible(key) } }
+      const patch = SHIPPED.has(key) ? { [key]: !visible(key) } : { extra: { [key]: !visible(key) } }
       return call('POST', patch).then((saved) => {
+        current = saved
+        paint()
+        notify()
+      })
+    }
+
+    /** Persist the dragged order: the whole list at once, so one drag cannot half-apply. */
+    function saveOrder(order) {
+      return call('POST', { order }).then((saved) => {
         current = saved
         paint()
         notify()
@@ -302,7 +357,9 @@ window.__ModuleLoader__.load({
       }, [])
 
       const row = () => ref.current?.closest(ROW) ?? null
-      const hidden = hideable().filter((key) => !visible(key))
+      const hidden = hideable()
+        .filter((key) => !visible(key))
+        .sort((left, right) => orderOf(left) - orderOf(right))
       const collect = overflowOn() && hidden.length > 0
 
       // The popover rules key off the row, and the row is shipped DOM: it only carries our marker and
@@ -396,6 +453,7 @@ window.__ModuleLoader__.load({
 
     /** Settings row for one observed key: the shipped wording when the key is a shipped button. */
     function rowOf(key) {
+      if (key === TIME) return [TIME, '时间', '回答的时间戳。不能点击，但可以像按钮一样隐藏和排序']
       const shipped = ACTIONS.find(([id]) => id === key)
       if (shipped) return shipped
       return [key, names.get(key) ?? key, '不是 DSH 自带的按钮，出现在回答底部时同样可以隐藏']
@@ -404,6 +462,7 @@ window.__ModuleLoader__.load({
     function Page() {
       const [error, setError] = React.useState(undefined)
       const [busy, setBusy] = React.useState(undefined)
+      const [dragging, setDragging] = React.useState(undefined)
       const [ready, setReady] = React.useState(false)
       const [, bump] = React.useReducer((count) => count + 1, 0)
 
@@ -435,7 +494,15 @@ window.__ModuleLoader__.load({
 
       // The collection switch gates on having something to collect; the rest live under it.
       // One switch per button a reply actually carries: an unrendered button has no switch to strand.
-      const rows = found.length > 0 ? [OVERFLOW_ROW, ...found.map(rowOf)] : []
+      // Listed in the order the user dragged them into; the drop target gets the dragged row in front.
+      const keys = [...found].sort((left, right) => orderOf(left) - orderOf(right))
+      const rows = keys.length > 0 ? [OVERFLOW_ROW, ...keys.map(rowOf)] : []
+      const drop = (target) => {
+        if (!dragging || dragging === target) return
+        const next = keys.filter((key) => key !== dragging)
+        next.splice(next.indexOf(target), 0, dragging)
+        saveOrder(next).catch((cause) => setError(String(cause?.message ?? cause)))
+      }
       const nothingHidden = !hideable().some((key) => !visible(key))
       const locked = (key) => (key === OVERFLOW && nothingHidden) || busy !== undefined
 
@@ -444,7 +511,7 @@ window.__ModuleLoader__.load({
         { className: 'dca-page' },
         h('style', {}, CSS),
         h('h2', { className: 'dca-title' }, 'dsh-chat-actions'),
-        h('p', { className: 'dca-note' }, '关掉的按钮会在每条回答底部隐藏。这里只管助手回答，代码块自带的复制按钮不受影响。'),
+        h('p', { className: 'dca-note' }, '关掉的按钮会在每条回答底部隐藏；按住一行拖动可以调整它在回答底部的顺序。这里只管助手回答，代码块自带的复制按钮不受影响。'),
         ready && rows.length === 0
           ? h('p', { className: 'dca-note' }, '还没有可管的按钮：先在对话里让一条助手回答渲染出来，它底部出现的每个按钮都会列在这里。')
           : null,
@@ -457,7 +524,13 @@ window.__ModuleLoader__.load({
                   'div',
                   {
                     key,
-                    className: 'dca-row',
+                    className: `dca-row${dragging === key ? ' dca-row-dragging' : ''}`,
+                    draggable: ready && key !== OVERFLOW,
+                    title: key === OVERFLOW ? undefined : '拖动这一行可以调整它在回答底部的顺序',
+                    onDragStart: () => setDragging(key),
+                    onDragOver: (event) => event.preventDefault(),
+                    onDrop: () => drop(key),
+                    onDragEnd: () => setDragging(undefined),
                     onClick: () => {
                       if (!locked(key)) toggle(key)
                     },

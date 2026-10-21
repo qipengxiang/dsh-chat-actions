@@ -19,12 +19,13 @@ const LOG_PATH = join(dirname(STATE_PATH), 'dsh-chat-actions.log')
 
 /** One key per button the browser half can hide; `true` means visible. `overflow` is not a button:
  * it collects the hidden ones behind a 「⋯」 cell instead of hiding them outright. */
-export const DEFAULTS = { copy: true, like: true, dislike: true, branch: true, usage: true, overflow: true }
+export const DEFAULTS = { copy: true, like: true, dislike: true, branch: true, usage: true, overflow: true, time: true }
 
 // `extra` holds the buttons the page reports that this plugin does not ship — another plugin's, or
 // one the user added by hand. Names come from the page, so both ends are bounded.
 const MAX_EXTRA = 24
 const MAX_NAME = 60
+const MAX_ORDER = 40
 
 /** Keep only known boolean keys: a hand-edited file or a stray request body cannot invent a button. */
 export function sanitize(patch, current = DEFAULTS) {
@@ -40,6 +41,13 @@ export function sanitize(patch, current = DEFAULTS) {
     }
   }
   if (Object.keys(extra).length > 0) next.extra = extra
+  // Drag order of the row items. Every entry is a button name, so it gets the same bounds; an order
+  // list that kept growing would be written back forever.
+  if (Array.isArray(patch?.order)) {
+    next.order = patch.order
+      .filter((key) => typeof key === 'string' && key.length > 0 && key.length <= MAX_NAME)
+      .slice(0, MAX_ORDER)
+  }
   return next
 }
 
