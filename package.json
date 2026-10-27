@@ -1,8 +1,11 @@
 {
   "name": "dsh-chat-actions",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.0.1",
   "description": "Show or hide each button under an assistant reply",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qipengxiang/dsh-chat-actions.git"
+  },
   "type": "module",
   "main": "index.js",
   "exports": {
